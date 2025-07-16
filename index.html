@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>P2P Chat (Encrypted + Video + QR)</title>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 700px;
+      margin: auto;
+      padding: 20px;
+    }
+    #chat {
+      border: 1px solid #ccc;
+      padding: 10px;
+      height: 250px;
+      overflow-y: auto;
+      margin-bottom: 10px;
+      background: #f9f9f9;
+    }
+    .message {
+      margin: 5px 0;
+      padding: 5px 10px;
+      border-radius: 10px;
+      max-width: 80%;
+    }
+    .me { text-align: right; background: #d0eaff; align-self: flex-end; }
+    .them { text-align: left; background: #d4fcd4; align-self: flex-start; }
+    input, button {
+      padding: 10px;
+      width: 100%;
+      margin: 5px 0;
+      box-sizing: border-box;
+    }
+    #video-container {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 20px;
+    }
+    video {
+      width: 48%;
+      border-radius: 10px;
+      border: 2px solid #ccc;
+    }
+    #qrcode {
+      margin-top: 10px;
+      text-align: center;
+    }
+    @media (max-width: 600px) {
+      #video-container {
+        flex-direction: column;
+      }
+      video {
+        width: 100%;
+        margin-bottom: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h2>🔐 P2P Chat + Video + QR</h2>
+  <div>Your ID: <strong id="peer-id">Loading...</strong></div>
+  <input type="text" id="connect-id" placeholder="Enter friend's ID" />
+  <button onclick="connectToPeer()">🔗 Connect</button>
+
+  <div>
+    Invite Link: <span id="invite-link" style="word-break: break-all; display:block;"></span>
+    <div id="qrcode"></div>
+  </div>
+
+  <div id="chat"></div>
+  <input type="text" id="message" placeholder="Type a message..." onkeydown="if(event.key==='Enter') sendMessage()" />
+  <button onclick="sendMessage()">Send</button>
+  <button onclick="startCall()">📞 Start Call</button>
+
+  <div id="video-container">
+    <video id="localVideo" autoplay muted></video>
+    <video id="remoteVideo" autoplay></video>
+  </div>
+
+  <script>
+    const peer = new Peer();
+    let conn = null;
+    let call = null;
+    let aesKey;
+
+    const chat = document.getElementById("chat");
+    const peerIdSpan = document.getElementById("peer-id");
+    const inviteLinkSpan = document.getElementById("invite-link");
+
+    peer.on("open", id => {
+      const inviteURL = `${location.href.split('#')[0]}#${id}`;
+      peerIdSpan.textContent = id;
+      inviteLinkSpan.textContent = inviteURL;
+
+      // Generate QR code
+      new QRCode(document.getElementById("qrcode"), {
+        text: inviteURL,
+        width: 200,
+        height: 200
+      });
+
+      // Autofill from URL hash
+      if (location.hash.length > 1) {
+        document.getElementById("connect-id").value = location.hash.substring(1);
+      }
+    });
+
+    peer.on("connection", connection => {
+      conn = connection;
+      setupConnection();
+    });
+
+    peer.on("call", incomingCall => {
+      navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
+        document.getElementById("localVideo").srcObject = stream;
+        call = incomingCall;
+        call.answer(stream);
+        call.on("stream", remoteStream => {
+          document.getElementById("remoteVideo").srcObject = remoteStream;
+        });
+      });
+    });
+
+    function connectToPeer() {
+      const otherId = document.getElementById("connect-id").value;
+      conn = peer.connect(otherId);
+      conn.on("open", setupConnection);
+    }
+
+    function setupConnection() {
+      generateAESKey();
+      conn.on("data", async encrypted => {
+        const msg = await decryptMessage(encrypted);
+        addMessage(msg, "them");
+      });
+    }
+
+    function sendMessage() {
+      const msg = document.getElementById("message").value;
+      if (conn && conn.open) {
+        encryptMessage(msg).then(encrypted => {
+          conn.send(encrypted);
+          addMessage(msg, "me");
+          document.getElementById("message").value = "";
+        });
+      } else {
+        alert("Connection not open!");
+      }
+    }
+
+    function addMessage(msg, sender) {
+      const div = document.createElement("div");
+      div.className = `message ${sender}`;
+      div.textContent = msg;
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    async function generateAESKey() {
+      aesKey = await crypto.subtle.generateKey(
+        { name: "AES-GCM", length: 256 },
+        true,
+        ["encrypt", "decrypt"]
+      );
+    }
+
+    async function encryptMessage(message) {
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const encoded = new TextEncoder().encode(message);
+      const ciphertext = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv },
+        aesKey,
+        encoded
+      );
+      return {
+        iv: Array.from(iv),
+        data: Array.from(new Uint8Array(ciphertext))
+      };
+    }
+
+    async function decryptMessage(encrypted) {
+      const iv = new Uint8Array(encrypted.iv);
+      const data = new Uint8Array(encrypted.data);
+      const decrypted = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv },
+        aesKey,
+        data
+      );
+      return new TextDecoder().decode(decrypted);
+    }
+
+    function startCall() {
+      navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
+        document.getElementById("localVideo").srcObject = stream;
+        const otherId = document.getElementById("connect-id").value;
+        call = peer.call(otherId, stream);
+        call.on("stream", remoteStream => {
+          document.getElementById("remoteVideo").srcObject = remoteStream;
+        });
+      }).catch(err => alert("Camera/mic error: " + err));
+    }
+  </script>
+</body>
+</html>
