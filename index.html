@@ -82,7 +82,9 @@
   </div>
 
   <script>
-    // ✅ Use PeerJS Cloud Server
+    const peerIdSpan = document.getElementById("peer-id");
+    const inviteLinkSpan = document.getElementById("invite-link");
+
     const peer = new Peer({
       host: "peerjs.com",
       port: 443,
@@ -94,27 +96,37 @@
     let call = null;
     let aesKey;
 
-    const chat = document.getElementById("chat");
-    const peerIdSpan = document.getElementById("peer-id");
-    const inviteLinkSpan = document.getElementById("invite-link");
+    let isPeerOpen = false;
 
     peer.on("open", id => {
-      const inviteURL = `${location.href.split('#')[0]}#${id}`;
+      isPeerOpen = true;
       peerIdSpan.textContent = id;
+      const inviteURL = `${location.href.split('#')[0]}#${id}`;
       inviteLinkSpan.textContent = inviteURL;
 
-      // Generate QR code
       new QRCode(document.getElementById("qrcode"), {
         text: inviteURL,
         width: 200,
         height: 200
       });
 
-      // Autofill from URL hash
       if (location.hash.length > 1) {
         document.getElementById("connect-id").value = location.hash.substring(1);
       }
     });
+
+    peer.on("error", err => {
+      alert("❌ PeerJS Error: " + err.message);
+      peerIdSpan.textContent = "Error";
+    });
+
+    // Fallback if PeerJS fails to open after 5 seconds
+    setTimeout(() => {
+      if (!isPeerOpen) {
+        alert("⚠️ Failed to connect to PeerJS. Try refreshing or switching to Chrome/Safari.");
+        peerIdSpan.textContent = "Failed to load ID";
+      }
+    }, 5000);
 
     peer.on("connection", connection => {
       conn = connection;
