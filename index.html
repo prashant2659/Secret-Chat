@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>P2P Chat (Encrypted + Video + QR)</title>
+  <title>P2P Chat (QR + Video + GitHub Pages)</title>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <style>
@@ -61,7 +61,7 @@
   </style>
 </head>
 <body>
-  <h2>🔐 P2P Chat + Video + QR</h2>
+  <h2>🔐 P2P Chat + Video + QR (No Server)</h2>
   <div>Your ID: <strong id="peer-id">Loading...</strong></div>
   <input type="text" id="connect-id" placeholder="Enter friend's ID" />
   <button onclick="connectToPeer()">🔗 Connect</button>
@@ -82,7 +82,14 @@
   </div>
 
   <script>
-    const peer = new Peer();
+    // ✅ Use PeerJS Cloud Server
+    const peer = new Peer({
+      host: "peerjs.com",
+      port: 443,
+      path: "/myapp",
+      secure: true
+    });
+
     let conn = null;
     let call = null;
     let aesKey;
